@@ -1,5 +1,4 @@
 import java.io.*;
-import java.nio.file.Path;
 import java.util.*;
 
 public class FrequentItemSet {
@@ -59,7 +58,7 @@ public class FrequentItemSet {
      * @param data The transaction database.
      * @param minSupport The minimum support count for an itemset to be considered frequent.
      */
-    public static Map<Set<Integer>,Integer> frequentItemSet(ArrayList<Integer[]> data, int minSupport) {
+    public static void frequentItemSet(ArrayList<Integer[]> data, int minSupport) {
         // This list will hold the frequent itemsets found at each level (L1, L2, etc.)
         List<Map<Set<Integer>, Set<Integer>>> allFrequentItemsets = new ArrayList<>();
 
@@ -75,7 +74,7 @@ public class FrequentItemSet {
                 Set<Integer> itemset = new HashSet<>();
                 itemset.add(item);
                 // Add the current transaction ID (i) to this item's tidset
-                frequentItemsets.computeIfAbsent(itemset, k -> new HashSet<>()).add(i);
+                frequentItemsets.computeIfAbsent(itemset, _ -> new HashSet<>()).add(i);
             }
         }
 
