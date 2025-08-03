@@ -1,128 +1,191 @@
 import java.io.*;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class FrequentItemSet {
-    public static void main(String[] args) throws FileNotFoundException {
 
-        ArrayList<Integer[]> data = getData("/home/katamanso/Documents/java-projects/DynamicProgramming/data.txt");
-        frequentItemSet(data,6);
+    public static void main(String[] args) {
 
-    }
-    public  static ArrayList<Integer[]> getData(String fileName) throws FileNotFoundException {
-        String input = "";
-        ArrayList<Integer[]> Data = new ArrayList<>();
-        BufferedReader bf = new BufferedReader(new FileReader(fileName));
+        if (args.length < 2) {
+            System.out.println("Usage: java FrequentItemSet <filePath> <minSupport>");
+            return;
+        }
+
+        String filePath = args[0];
+        int minSupport = Integer.parseInt(args[1]);
 
         try {
-            while ((input = bf.readLine()) != null){
-                String[] values = input.split(" ");
-                ArrayList<Integer> preData = new ArrayList<>();
-                for(String val : values){
-                    int data = Integer.parseInt(val);
-                    preData.add(data);
-                }
-                Data.add(preData.toArray(new Integer[0]));
-            }
+            // Read data from the file provided as an argument
+            ArrayList<Integer[]> data = getData(filePath);
+            // Run the algorithm with the given minSupport
+            frequentItemSet(data, minSupport);
 
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } catch (FileNotFoundException e) {
+            System.err.println("Error: File not found at " + filePath);
+        } catch (NumberFormatException e) {
+            System.err.println("Error: minSupport must be an integer.");
         }
-
-        return Data;
     }
 
-    public static void frequentItemSet(ArrayList<Integer[]> data,int minSupport) {
+    /**
+     * Reads transaction data from a file.
+     * Each line in the file is a transaction, with items separated by spaces.
+     * @param fileName The path to the data file.
+     * @return An ArrayList where each element is an Integer array representing a transaction.
+     * @throws FileNotFoundException If the file cannot be found.
+     */
+    public static ArrayList<Integer[]> getData(String fileName) throws FileNotFoundException {
+        ArrayList<Integer[]> data = new ArrayList<>();
+        try (BufferedReader bf = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = bf.readLine()) != null) {
+                String[] values = line.trim().split("\\s+"); // Use regex for any whitespace
+                ArrayList<Integer> transaction = new ArrayList<>();
+                for (String val : values) {
+                    if (!val.isEmpty()) {
+                        transaction.add(Integer.parseInt(val));
+                    }
+                }
+                data.add(transaction.toArray(new Integer[0]));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Error reading file: " + e.getMessage(), e);
+        }
+        return data;
+    }
+
+    /**
+     * Implements the Apriori algorithm to find all frequent itemsets.
+     * @param data The transaction database.
+     * @param minSupport The minimum support count for an itemset to be considered frequent.
+     */
+    public static Map<Set<Integer>,Integer> frequentItemSet(ArrayList<Integer[]> data, int minSupport) {
+        // This list will hold the frequent itemsets found at each level (L1, L2, etc.)
         List<Map<Set<Integer>, Set<Integer>>> allFrequentItemsets = new ArrayList<>();
-        ConcurrentHashMap<Set<Integer>, Set<Integer>> frequentItemsets = new ConcurrentHashMap<>();
-        
-        for (int i = 1; i < data.size(); i++) {
+
+        // This map (Lk) holds the frequent itemsets for the current level k.
+        // Key: The itemset (e.g., {1, 2})
+        // Value: The set of transaction IDs (TIDs) where it appears (e.g., {0, 3, 5})
+        Map<Set<Integer>, Set<Integer>> frequentItemsets = new HashMap<>();
+
+        // --- PHASE 1: Generate frequent 1-itemsets (L1) ---
+        for (int i = 0; i < data.size(); i++) {
             Integer[] transaction = data.get(i);
             for (Integer item : transaction) {
-                Set<Integer> key = new HashSet<>();
-                key.add(item);
-//                if(!itemSet.containsKey(key)){
-//                    itemSet.put(key,new HashSet<>());
-//                }
-                frequentItemsets.computeIfAbsent(key, k -> new HashSet<>()).add(i);
+                Set<Integer> itemset = new HashSet<>();
+                itemset.add(item);
+                // Add the current transaction ID (i) to this item's tidset
+                frequentItemsets.computeIfAbsent(itemset, k -> new HashSet<>()).add(i);
             }
         }
-        printSet(frequentItemsets);
 
+        // Prune the 1-itemsets that do not meet minSupport
         frequentItemsets.entrySet().removeIf(entry -> entry.getValue().size() < minSupport);
 
-
+        // Main loop to generate Lk from L(k-1)
         while (!frequentItemsets.isEmpty()) {
-            ConcurrentHashMap<Set<Integer>, Set<Integer>> nextLevelItemsets = new ConcurrentHashMap<>();
+            allFrequentItemsets.add(frequentItemsets);
 
+            // --- PHASE 2: Generate candidate (k+1)-itemsets from frequent k-itemsets ---
+            Map<Set<Integer>, Set<Integer>> nextLevelItemsets = new HashMap<>();
             List<Set<Integer>> keys = new ArrayList<>(frequentItemsets.keySet());
+
+            // Join Lk with Lk to generate C(k+1)
             for (int i = 0; i < keys.size(); i++) {
-                for (int j = i+1; j < keys.size() ; j++) {
+                for (int j = i + 1; j < keys.size(); j++) {
                     Set<Integer> set1 = keys.get(i);
                     Set<Integer> set2 = keys.get(j);
 
+                    // Create a union to form the candidate
                     Set<Integer> union = new HashSet<>(set1);
                     union.addAll(set2);
 
-                    if (union.size() == set1.size() + 1){
+                    // Join only if the itemsets have k-1 common items, resulting in a (k+1)-itemset
+                    if (union.size() == set1.size() + 1) {
+                        // This is the candidate C(k+1)
+                        // To get its support, intersect the tidsets of its parent k-itemsets
                         Set<Integer> tids1 = frequentItemsets.get(set1);
                         Set<Integer> tids2 = frequentItemsets.get(set2);
 
                         Set<Integer> intersection = new HashSet<>(tids1);
-                        intersection.retainAll(tids2);
+                        intersection.retainAll(tids2); // The new tidset for the union
 
-                        // If it meets minSupport, keep it
+                        // --- PHASE 3: Prune candidates ---
+                        // If the candidate meets minSupport, add it to the next level's frequent itemsets
                         if (intersection.size() >= minSupport) {
                             nextLevelItemsets.put(union, intersection);
                         }
                     }
-
                 }
             }
-            System.out.println("Next Level:");
-            printSet(nextLevelItemsets);
-            allFrequentItemsets.add(frequentItemsets);
+            // The candidates for the next level become the frequent itemsets for the next loop iteration
             frequentItemsets = nextLevelItemsets;
         }
-        printAllFrequentItemsets(allFrequentItemsets);
-    }
-    public static void printSet( ConcurrentHashMap<Set<Integer>, Set<Integer>> frequentItemsets ){
-        // Print results
-        for (Map.Entry<Set<Integer>, Set<Integer>> entry : frequentItemsets.entrySet()) {
-            System.out.println(entry.getKey() + " → " + entry.getValue());
-        }
-    }
-    public static void printAllFrequentItemsets(List<Map<Set<Integer>, Set<Integer>>> levels) {
-        StringBuilder sb = new StringBuilder();
 
-        for (int level = 0; level < levels.size(); level++) {
-            Map<Set<Integer>, Set<Integer>> itemsets = levels.get(level);
-            sb.append("Level ").append(level + 1).append(" itemsets:\n");
-            for (Map.Entry<Set<Integer>, Set<Integer>> entry : itemsets.entrySet()) {
-                sb.append("  ").append(entry.getKey()).append(" → ").append(entry.getValue()).append("\n");
+        // --- Final step: Print and write results to a file ---
+        printAndWriteFrequentItemsets(allFrequentItemsets);
+    }
+
+    /**
+     * Generates all the strong association rules that meet the confidence threshold
+     * @param allFrequentItemsets The mined frequent item sets
+     * @param minConfidence The minimum confidence for a rule to considered true
+     */
+    public static void generateAssociationRules(
+            List<Map<Set<Integer>, Set<Integer>>> allFrequentItemsets,
+            double minConfidence
+    ){
+
+    }
+
+    /**
+     * Formats the final list of frequent itemsets, prints them to the console,
+     * and writes them to a file named "frequent_itemsets.txt".
+     * @param levels A list containing the frequent itemset maps for each level.
+     */
+    public static void printAndWriteFrequentItemsets(List<Map<Set<Integer>, Set<Integer>>> levels) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("--- Frequent Itemsets ---\n\n");
+
+        for (int i = 0; i < levels.size(); i++) {
+            Map<Set<Integer>, Set<Integer>> itemsets = levels.get(i);
+            sb.append("Level ").append(i + 1).append(" (L").append(i + 1).append(") Frequent Itemsets:\n");
+            if (itemsets.isEmpty()) {
+                sb.append("  None\n");
+            } else {
+                for (Map.Entry<Set<Integer>, Set<Integer>> entry : itemsets.entrySet()) {
+                    // Itemset -> Support Count
+                    sb.append("  ")
+                            .append(entry.getKey())
+                            .append("  (Support: ")
+                            .append(entry.getValue().size())
+                            .append(")\n");
+                }
             }
             sb.append("\n");
         }
 
+        // Print to console
+        System.out.println(sb);
+
+        // Write to file
         try {
             writeToFile("frequent_itemsets.txt", sb.toString());
+            System.out.println("Results successfully written to frequent_itemsets.txt");
         } catch (IOException e) {
-            System.out.println("Failed to write itemsets to file.");
+            System.err.println("Failed to write itemsets to file: " + e.getMessage());
         }
-
-        // Still print to console
-        System.out.println(sb);
     }
 
-
-    public static void writeToFile(String fileName,String Data) throws IOException {
-        Path p = Path.of(fileName);
-        FileWriter fw = new FileWriter(p.toFile());
-        fw.append(Data);
-        fw.close();
-
+    /**
+     * A simple utility to write string data to a file.
+     * @param fileName The name of the file to write to.
+     * @param data The string content to write.
+     * @throws IOException If a file writing error occurs.
+     * */
+    public static void writeToFile(String fileName, String data) throws IOException {
+        try (FileWriter fw = new FileWriter(fileName)) {
+            fw.write(data);
+        }
     }
-
-
 }
