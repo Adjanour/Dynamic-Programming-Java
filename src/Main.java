@@ -3,8 +3,12 @@ import java.util.HashMap;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        HashMap<Integer,Integer> memo = new HashMap<>();
-        System.out.println(fib(4,memo));
+//        HashMap<Integer,Integer> memo = new HashMap<>();
+//        System.out.println(fib(4,memo));
+
+        for (int i = 0; i < (1<< 5); i++) {
+            System.out.println(i);
+        }
 
     }
     public static int fib(int num,HashMap<Integer,Integer> memo){
